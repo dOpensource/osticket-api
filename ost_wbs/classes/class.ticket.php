@@ -108,6 +108,49 @@ class Ticket
                     $getTickets = $mysqli->query("SELECT * FROM ".TABLE_PREFIX."ticket INNER JOIN ".TABLE_PREFIX."ticket__cdata ON ".TABLE_PREFIX."ticket.ticket_id = ".TABLE_PREFIX."ticket__cdata.ticket_id INNER JOIN ".TABLE_PREFIX."thread ON ".TABLE_PREFIX."thread.object_id = ".TABLE_PREFIX."ticket.ticket_id INNER JOIN ".TABLE_PREFIX."thread_entry ON ".TABLE_PREFIX."thread.id = ".TABLE_PREFIX."thread_entry.thread_id WHERE ".TABLE_PREFIX."ticket.created >= '$startDate' and ".TABLE_PREFIX."ticket.created <= '$endDate' AND ".TABLE_PREFIX."ticket.status_id = '$tStatus'");
 
                 break;
+                // Search by term (subject/body) with date range
+                case "search":
+
+                    // Get required parameters
+                    $startDate = $parameters['parameters']['start_date'];
+                    $endDate = $parameters['parameters']['end_date'];
+                    $searchTerm = $parameters['parameters']['term'];
+
+                    // Validate required parameters
+                    if (empty($startDate) || empty($endDate)) {
+                        throw new Exception("start_date and end_date are required for search.");
+                    }
+                    if (empty($searchTerm)) {
+                        throw new Exception("term parameter is required for search.");
+                    }
+
+                    // Escape search term for LIKE query
+                    $searchTerm = '%' . $mysqli->real_escape_string($searchTerm) . '%';
+
+                    // Optional status filter
+                    $tStatus = isset($parameters["parameters"]["status"]) ? $parameters["parameters"]["status"] : null;
+
+                    // Build query - search in subject and thread entry body
+                    $query = "SELECT DISTINCT ".TABLE_PREFIX."ticket.*, ".TABLE_PREFIX."ticket__cdata.subject, ".TABLE_PREFIX."ticket__cdata.priority, ".TABLE_PREFIX."thread_entry.title, ".TABLE_PREFIX."thread_entry.body 
+                              FROM ".TABLE_PREFIX."ticket 
+                              INNER JOIN ".TABLE_PREFIX."ticket__cdata ON ".TABLE_PREFIX."ticket.ticket_id = ".TABLE_PREFIX."ticket__cdata.ticket_id 
+                              INNER JOIN ".TABLE_PREFIX."thread ON ".TABLE_PREFIX."thread.object_id = ".TABLE_PREFIX."ticket.ticket_id AND ".TABLE_PREFIX."thread.object_type = 'T'
+                              INNER JOIN ".TABLE_PREFIX."thread_entry ON ".TABLE_PREFIX."thread.id = ".TABLE_PREFIX."thread_entry.thread_id 
+                              WHERE ".TABLE_PREFIX."ticket.created >= '$startDate' 
+                              AND ".TABLE_PREFIX."ticket.created <= '$endDate' 
+                              AND (".TABLE_PREFIX."ticket__cdata.subject LIKE '$searchTerm' OR ".TABLE_PREFIX."thread_entry.body LIKE '$searchTerm')";
+
+                    // Add status filter if provided
+                    if ($tStatus !== null && $tStatus != 0) {
+                        Helper::checkTicketStatus($tStatus);
+                        $query .= " AND ".TABLE_PREFIX."ticket.status_id = '$tStatus'";
+                    }
+
+                    $query .= " ORDER BY ".TABLE_PREFIX."ticket.created DESC LIMIT 100";
+
+                    $getTickets = $mysqli->query($query);
+
+                break;
                 default:
                     throw new Exception("Unknown Parameter.");
                 break;
